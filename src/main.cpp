@@ -1,49 +1,115 @@
 #include <iostream>
+#include <string_view>
+#include <vector>
+#include <optional>
+#include <assert.h>
+#include <algorithm>
+#include <filesystem>
 
-#include <suitesparse/umfpack.h>
+const std::string INPUT_EXTENSION = ".mps";
 
-#include "mpsReader.h"
+class CommandParser {
+public:
+    std::vector<std::string_view> m_tokens;
+    std::vector<std::string_view> m_arguments;
+    
+    CommandParser(const int argc, const char* argv[]) {
+        for(int i = 1; i < argc; i++) {
+            this->m_tokens.push_back(argv[i]);
+        }
+
+        for(size_t i = 0; i < m_tokens.size(); i++) {
+            if((i == 0 || !is_option(m_tokens[i-1])) && !is_flag(m_tokens[i]) && !is_option(m_tokens[i])) {
+                this->m_arguments.push_back(m_tokens[i]);
+            }
+        }
+    }
+
+    std::optional<std::string_view> get_option(const std::string_view token) const {
+        if(!is_option(token))
+            return std::nullopt;
+
+        auto it = std::find(m_tokens.begin(), m_tokens.end(), token);
+        if(it != m_tokens.end() && ++it != m_tokens.end() && !is_option(*it) && !is_flag(*it)) {
+            return *it;
+        }
+        return std::nullopt;
+    } 
+
+    bool has_flag(const std::string_view token) const {
+        assert(is_flag(token));
+        return std::find(m_tokens.begin(), m_tokens.end(), token) != m_tokens.end();
+    }
+
+private:
+    bool is_flag(const std::string_view token) const {
+        return token == "--help" || token == "-h";
+    }
+
+    bool is_option(const std::string_view token) const {
+        return token == "-C";
+    }
+};
+
+void print_help() {
+    std::cout << "Advanced Simplex Implementation\n\n"
+              << "Usage: simplex [-h | --help] [-C <path>] [<files/directories>]\n\n";
+}
 
 int main(const int argc, const char* argv[]) {
-    mpsReader reader;
+    CommandParser parser(argc, argv);
+
+    if(parser.has_flag("--help")) {
+        print_help();
+    }
+
+    std::filesystem::path working_directory = std::filesystem::current_path();
+
+    std::optional<std::string_view> directory_option = parser.get_option("-C");
+    if(directory_option.has_value()) {
+        std::filesystem::path new_path = std::filesystem::path(directory_option.value());
+        if(!std::filesystem::exists(new_path)) {
+            std::cerr << "given working directory doesn't exists: " << new_path.string() << std::endl;
+            return -1;
+        }
+
+        working_directory = new_path;
+    }
     
-    std::int32_t n = 5;
+    // iterate through input directories and get valid ones
+    std::vector<std::filesystem::path> inputs;
+    for(std::string_view input : parser.m_arguments) {
+        std::cout << input << std::endl;
+        const std::filesystem::path input_path = std::filesystem::path(working_directory / input);
+        if(!std::filesystem::exists(input_path)) {
+            std::cerr << "invalid input: " << input_path.string() << std::endl;
+            continue;
+        }
 
-    std::vector<std::int32_t> Ap = {0, 2, 5, 9, 10, 12};
-    std::vector<std::int32_t> Ai = {0, 1, 0, 2, 4, 1, 2, 3, 4, 2, 1, 4};
-    std::vector<double> Ax = {2., 3., 3., -1., 4., 4., -3., 1., 2., 2., 6., 1.};
-    std::vector<double> b = {8., 45., -3., 3., 19.};
-    std::vector<double> x(n, 0.0);
-
-    void* Symbolic = nullptr;
-    void* Numeric = nullptr;
-
-    int status = umfpack_di_symbolic(n, n, Ap.data(), Ai.data(), Ax.data(), &Symbolic, nullptr, nullptr);
-    if (status != UMFPACK_OK) {
-        std::cerr << "Symbolic factorization failed." << std::endl;
-        return 1;
+        if(std::filesystem::is_directory(input_path)) {
+            for (const auto& entry : std::filesystem::recursive_directory_iterator(input_path)) {
+                if (entry.is_regular_file()) {
+                    const std::filesystem::path& file_path = entry.path();
+                
+                    if (file_path.extension() == INPUT_EXTENSION) {
+                        inputs.push_back(file_path);
+                    }
+                }
+            }
+        }
+        else {
+            if(input_path.extension() == INPUT_EXTENSION) {
+                inputs.push_back(input_path);
+            }
+        }
     }
 
-    status = umfpack_di_numeric(Ap.data(), Ai.data(), Ax.data(), Symbolic, &Numeric, nullptr, nullptr);
-    umfpack_di_free_symbolic(&Symbolic); 
+    std::cout << "found " << inputs.size() << " input files" << std::endl;
+
+    // solve given files
+    for(std::filesystem::path input : inputs) {
+        std::cout << "solving " << input.string() << std::endl;
+    }
     
-    if (status != UMFPACK_OK) {
-        std::cerr << "Numerical factorization failed." << std::endl;
-        return 1;
-    }
-
-    status = umfpack_di_solve(UMFPACK_A, Ap.data(), Ai.data(), Ax.data(), x.data(), b.data(), Numeric, nullptr, nullptr);
-    umfpack_di_free_numeric(&Numeric);
-
-    if (status != UMFPACK_OK) {
-        std::cerr << "Solver step failed." << std::endl;
-        return 1;
-    }
-
-    std::cout << "Solution vector x:" << std::endl;
-    for (int i = 0; i < n; ++i) {
-        std::cout << "x[" << i << "] = " << x[i] << std::endl;
-    }
-
     return 0;
 }
