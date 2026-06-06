@@ -1,11 +1,11 @@
-project('default-cpp', ['c', 'cpp'])
+project('simplex', ['c', 'cpp'])
 
-includes = []
+includes = ['thirdparty/']
 
 sources = []
 subdir('src')
 
-executable('default-cpp',
+executable('simplex',
   sources,
-  build_subdir: 'bin',
+  include_directories: includes,
 )
