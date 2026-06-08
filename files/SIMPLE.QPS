@@ -1,0 +1,20 @@
+NAME          TESTPROB
+ROWS
+ N  COST
+ L  LIM1
+ L  LIM2
+ L  LIM3
+COLUMNS
+    XONE      COST                 19   LIM1                 3
+    XONE      LIM2                 1    LIM3                 4
+    XTWO      COST                 13   LIM1                 2
+    XTWO      LIM2                 1    LIM3                 3
+    XTRH      COST                 12   LIM1                 1
+    XTRH      LIM2                 1    LIM3                 3
+    XFOU      COST                 17   LIM1                 2
+    XFOU      LIM2                 1    LIM3                 4
+RHS
+    RHS1      LIM1                 225   LIM2                117
+    RHS1      LIM3                420
+ENDATA
+

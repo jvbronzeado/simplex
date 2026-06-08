@@ -6,6 +6,7 @@
 
 Solver::Solver(mpsReader reader) {
     this->m_reader = reader;
+    //this->m_reader.c *= -1;
     this->m_reader.printData();
 }
 

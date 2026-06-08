@@ -9,7 +9,11 @@
 #include "mpsReader.h"
 #include "solver.h"
 
-const std::string INPUT_EXTENSION = ".mps";
+const vector<std::string> INPUT_EXTENSIONS = {".mps", ".QPS"};
+
+bool is_extension_valid(string extension) {
+    return (find(INPUT_EXTENSIONS.begin(), INPUT_EXTENSIONS.end(), extension) != INPUT_EXTENSIONS.end());
+} 
 
 class CommandParser {
 public:
@@ -65,7 +69,7 @@ int main(const int argc, const char* argv[]) {
     if(parser.has_flag("--help")) {
         print_help();
     }
-
+    
     std::filesystem::path working_directory = std::filesystem::current_path();
 
     std::optional<std::string_view> directory_option = parser.get_option("-C");
@@ -94,14 +98,14 @@ int main(const int argc, const char* argv[]) {
                 if (entry.is_regular_file()) {
                     const std::filesystem::path& file_path = entry.path();
                 
-                    if (file_path.extension() == INPUT_EXTENSION) {
+                    if (is_extension_valid(file_path.extension())) {
                         inputs.push_back(file_path);
                     }
                 }
             }
         }
         else {
-            if(input_path.extension() == INPUT_EXTENSION) {
+            if(is_extension_valid(input_path.extension())) {
                 inputs.push_back(input_path);
             }
         }
