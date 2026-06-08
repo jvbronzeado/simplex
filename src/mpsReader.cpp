@@ -35,6 +35,81 @@ mpsReader::mpsReader()
 {
 }
 
+void mpsReader::printData() {
+    // vibe coded mesmo, tenho paciencia pra tacar varios print nao
+    
+    auto& r = *this; // Referência curta para facilitar
+    
+    cout << "\n" << string(80, '=') << endl;
+    cout << "   RESUMO DO ARQUIVO MPS: " << r.Name << endl;
+    cout << string(80, '=') << endl;
+
+    // 1. Dimensões
+    cout << "[DIMENSOES]" << endl;
+    cout << "  Variaveis (n_cols): " << r.n_cols << endl;
+    cout << "  Restricoes (n_rows): " << r.n_rows << " (Sendo " << r.n_rows_inq << " de desigualdade)" << endl;
+    cout << "  Tamanho de A: [" << r.A.rows() << " x " << r.A.cols() << "]" << endl;
+    cout << "  Tamanho de b: [" << r.b.size() << "]" << endl;
+    cout << "  Tamanho de c: [" << r.c.size() << "]" << endl;
+    cout << string(80, '-') << endl;
+
+    // 2. Vetores Principais (c, b, lb, ub)
+    // Imprime as primeiras N linhas para não travar o terminal se for gigante
+    int limit = (r.n_cols > 50) ? 20 : r.n_cols; 
+    
+    cout << "[VETORES DE CUSTO, LIMITES E RHS]" << endl;
+    printf("%-10s | %-10s | %-10s | %-10s | %-10s\n", "Indice", "Custo (c)", "Lower Bnd", "Upper Bnd", "RHS (b)");
+    cout << string(65, '-') << endl;
+
+    for (int i = 0; i < r.n_cols; ++i) {
+        // b pode ser menor que n_cols, então tratamos o índice
+        string b_val = (i < r.b.size()) ? to_string(r.b(i)) : "-";
+        
+        printf("%-10d | %-10.4f | %-10.4f | %-10.4f | %-10s\n", 
+               i, r.c(i), r.lb(i), r.ub(i), (i < r.b.size() ? b_val.c_str() : "N/A"));
+        
+        if (i == limit && r.n_cols > limit) {
+            cout << "... (omitindo o restante dos " << r.n_cols << " elementos) ..." << endl;
+            break;
+        }
+    }
+    cout << string(80, '-') << endl;
+
+    // 3. Matriz A (Formatada)
+    cout << "[MATRIZ A (Primeiras colunas/linhas)]" << endl;
+    int row_lim = min((int)r.A.rows(), 15);
+    int col_lim = min((int)r.A.cols(), 10);
+
+    // Cabeçalho das colunas
+    printf("%-8s", "Row\\Col");
+    for(int j=0; j<col_lim; j++) printf(" [%-2d]     ", j);
+    cout << "\n" << string(col_lim * 10 + 8, '-') << endl;
+
+    for (int i = 0; i < row_lim; ++i) {
+        printf("Row %-3d |", i);
+        for (int j = 0; j < col_lim; ++j) {
+            double val = r.A(i, j);
+            if (abs(val) < 1e-9) printf(" %-8s", "."); // Ponto para zeros facilita a leitura
+            else printf(" %-8.3f", val);
+        }
+        cout << endl;
+    }
+    
+    if (r.A.rows() > row_lim || r.A.cols() > col_lim) {
+        cout << "\nNote: Matriz muito grande, exibindo apenas bloco " << row_lim << "x" << col_lim << "." << endl;
+    }
+
+    // 4. Verificação de b zerado (O seu problema atual)
+    double b_sum = r.b.norm();
+    cout << string(80, '=') << endl;
+    if (b_sum < 1e-9) {
+        cout << " ALERTA: O vetor b parece estar ZERADO ou nao foi lido!" << endl;
+    } else {
+        cout << " SUCESSO: Vetor b contem valores (Norma: " << b_sum << ")" << endl;
+    }
+    cout << string(80, '=') << "\n" << endl;
+}
+
 void mpsReader::_findPos2Start(ifstream &readFile)
 {
     long pos;
@@ -367,7 +442,7 @@ void mpsReader::_splitRaw(MatrixXd &Araw, VectorXd &braw, VectorXd &c, MatrixXd 
     {
         if (row_labels[i] != "X"){
             A.block(counter, 0, 1, n_cols) = Araw.row(i);
-            //b.row(counter) = braw.row(i);
+            // b.row(counter) = braw.row(i);
             if (row_labels[i] == "L"){
                 A(counter, n_cols + counter_inq) = -1;
                 lb(n_cols + counter_inq) = -numeric_limits<double>::infinity();

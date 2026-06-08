@@ -76,6 +76,8 @@
  public:
      mpsReader(string fileName);
      mpsReader();
+
+     void printData();
  
      string Name;
      int n_rows;
@@ -93,8 +95,6 @@
      vector<string> col_labels;
      vector<string> row_list;
      vector<string> col_list;
- 
- 
  private:
      long col_pos;
      long rhs_pos;

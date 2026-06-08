@@ -1,2 +1,2 @@
 
-sources += files('main.cpp', 'mpsReader.cpp')
+sources += files('main.cpp', 'mpsReader.cpp', 'solver.cpp')

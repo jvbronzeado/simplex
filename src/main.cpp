@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <filesystem>
 
+#include "mpsReader.h"
+#include "solver.h"
+
 const std::string INPUT_EXTENSION = ".mps";
 
 class CommandParser {
@@ -109,6 +112,11 @@ int main(const int argc, const char* argv[]) {
     // solve given files
     for(std::filesystem::path input : inputs) {
         std::cout << "solving " << input.string() << std::endl;
+
+        mpsReader reader(input.string());
+        Solver solver(reader);
+
+        solver.solve();
     }
     
     return 0;
