@@ -120,7 +120,9 @@ int main(const int argc, const char* argv[]) {
         mpsReader reader(input.string());
         Solver solver(reader);
 
-        solver.solve();
+        SolutionResult result = solver.solve();
+
+        cout << "Variables: \n" << result.variables << "\nObjective: " << result.objective << endl;
     }
     
     return 0;

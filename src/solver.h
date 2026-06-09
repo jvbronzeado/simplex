@@ -5,17 +5,36 @@
 
 #include "mpsReader.h"
 
+enum class ResultType {
+    FEASIBLE,
+    INFEASIBLE,
+    UNBOUNDED,
+    NONE
+};
+
+struct SolutionResult {
+    ResultType type;
+    VectorXd variables;
+    double objective;
+
+    vector<int> basis;
+};
+
 class Solver {
 public:
     Solver(mpsReader reader);
     ~Solver() = default;
 
-    bool solve();
-    bool solveFromBasicSolution(vector<int> start_basis, VectorXd basic_solution);
+    SolutionResult solve();
 private:
-    std::vector<int> calculateNonBasicFromBasic(std::vector<int> basis);
+    SolutionResult solveFromBasicSolution(vector<int> start_basis, VectorXd basic_solution, bool phase1);
+    std::vector<int> calculateNonBasicFromBasic(const std::vector<int>& basis) const;
+
+    void updateB0(Eigen::SparseMatrix<double>& B, const vector<int>& basis) const;
     
     mpsReader m_reader;
+
+    
 };
 
 #endif
