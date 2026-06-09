@@ -4,6 +4,16 @@
 #define EPSILON 1e-9
 #define SMEPSILON 1e-12
 
+#define EIGEN_ERRDETECT(solver, returnval, err_msg) if((solver).info() != Eigen::Success) { \
+    std::cerr << (err_msg); \
+    return (returnval); \
+}
+
+struct Eta {
+    int index; // 0 to row-1
+    VectorXd etavector;
+};
+
 Solver::Solver(mpsReader reader) {
     this->m_reader = reader;
     //this->m_reader.c *= -1;
@@ -30,47 +40,53 @@ bool Solver::solve() {
 
 bool Solver::solveFromBasicSolution(vector<int> basis, VectorXd solution) {
     const int rows = this->m_reader.A.rows();
-
-    Eigen::SparseMatrix<double> A = this->m_reader.A.sparseView();    
-    Eigen::SparseMatrix<double> B(rows, rows);
     
-    Eigen::UmfPackLU<Eigen::SparseMatrix<double>> solver;
-    Eigen::VectorXi nonzero_per_col(rows);
+    Eigen::SparseMatrix<double> A = this->m_reader.A.sparseView();
 
     vector<int> nonbasic = calculateNonBasicFromBasic(basis);
+    vector<Eta> etas;
+
+    Eigen::UmfPackLU<Eigen::SparseMatrix<double>> normal_solver;
+    Eigen::UmfPackLU<Eigen::SparseMatrix<double>> transp_solver;
+
+    // calculate B0
+    Eigen::SparseMatrix<double> B(rows, rows);
+
+    Eigen::VectorXi nonzero_per_col(rows);
+    for(int i = 0; i < rows; i++) {
+        nonzero_per_col[i] = A.col(basis[i]).nonZeros();
+    }
+
+    B.reserve(nonzero_per_col); // allocate memory for sparse matrix
+
+    for(int i = 0; i < rows; i++) {
+        B.col(i) = A.col(basis[i]); // fill basis coefficients
+    }
+
+    B.makeCompressed();
+
+    // create basis costs vector
+    VectorXd bcosts = VectorXd(rows);
+    for(int i = 0; i < rows; i++) {
+        bcosts[i] = this->m_reader.c[basis[i]]; // fill with basis cost values
+    }
+
+    // compute solvers
+    normal_solver.compute(B);
+    EIGEN_ERRDETECT(normal_solver, false, "failed to compute normal solver")
+
+    transp_solver.compute(B.transpose());
+    EIGEN_ERRDETECT(transp_solver, false, "failed to compute transpose solver")
+
+    // STEP 1: calculate starting y with yB = cb
+    // cout << "STEP 1" << endl;
+    VectorXd y = transp_solver.solve(bcosts);
+    EIGEN_ERRDETECT(transp_solver, false, "failed to calculate dual vector's linear system");
 
     // simplex loop
     while(true) {
-        // TODO: Factorization
-        
-        // STEP 1: calculate yB = cb
-        // cout << "STEP 1" << endl;
-        for(int i = 0; i < rows; i++) {
-            nonzero_per_col[i] = A.col(basis[i]).nonZeros();
-        }
-
-        B.reserve(nonzero_per_col); // allocate memory for sparse matrix
-        
-        VectorXd costs = VectorXd(rows);
-        for(int i = 0; i < rows; i++) {
-            costs[i] = this->m_reader.c[basis[i]]; // fill with basis cost values
-            B.col(i) = A.col(basis[i]); // fill basis coefficients
-        }
-        
-        B.makeCompressed();
-
-        solver.compute(B.transpose());
-        if(solver.info() != Eigen::Success) {
-            std::cerr << "failed to compute Umfpack solver for B transpose" << std::endl;
-            return false;
-        }
-
-        VectorXd y = solver.solve(costs);
-        if(solver.info() != Eigen::Success) {
-            std::cerr << "failed to calculate dual vector's linear system" << std::endl;
-            return false;
-        }
-
+        // TODO: maybe recalculate the B and clear etas after some iterations to avoid precisions errors
+                
         // STEP 2: Choose entering collumn
         // cout << "STEP 2" << endl;
         int best_col = -1;
@@ -96,18 +112,17 @@ bool Solver::solveFromBasicSolution(vector<int> basis, VectorXd solution) {
 
         // STEP 3: Solve Bd = a
         // cout << "STEP 3" << endl;
-
-        solver.compute(B);
-        if(solver.info() != Eigen::Success) {
-            std::cerr << "failed to compute Umfpack solver for B" << std::endl;
-            return false;
-        }
         
-        VectorXd d = solver.solve(A.col(best_col));
-        if(solver.info() != Eigen::Success) {
-            std::cerr << "failed to calculate d vector's linear system" << std::endl;
-            return false; 
+        VectorXd d = normal_solver.solve(A.col(best_col)); // set starting rhs value
+        EIGEN_ERRDETECT(normal_solver, false, "failed to calculate start factorization of d vector");
+
+        for(Eta& eta : etas) {
+            double val = d[eta.index];
+            d += eta.etavector * d[eta.index];
+            d[eta.index] -= val;
         }
+
+        // ^ after that loop, d is correct
 
         // STEP 4: Define t
         // cout << "STEP 4" << endl;
@@ -172,7 +187,36 @@ bool Solver::solveFromBasicSolution(vector<int> basis, VectorXd solution) {
 
         basis[basis_id] = best_col;
         nonbasic[nonbasic_id] = leaving_col;
-    }
+
+        bcosts[basis_id] = this->m_reader.c[best_col]; // update costs value
+
+        // get eta vector
+        VectorXd inverse_eta = d;
+
+        // compute the inverse eta, cause thats what we're going to use
+        double det = d[basis_id];
+        for(int i = 0; i < rows; i++) {
+            if(i == basis_id)
+                inverse_eta[i] = 1/det;
+            else
+                inverse_eta[i] = -d[i]/det;
+        }
+        
+        etas.push_back({
+            .index = basis_id,
+            .etavector = inverse_eta
+        });
+
+        // update the y vector
+        VectorXd rhs_val = bcosts;
+        for(int i = etas.size()-1; i >= 0; i--) {
+            Eta& eta = etas[i];
+            rhs_val[eta.index] = rhs_val.dot(eta.etavector);
+        }
+
+        y = transp_solver.solve(rhs_val);
+        EIGEN_ERRDETECT(transp_solver, false, "failed to calculate dual vector's linear system");
+     }
 
     cout << solution << endl;
     cout << "finished simplex" << endl;
