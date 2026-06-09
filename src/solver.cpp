@@ -117,9 +117,9 @@ bool Solver::solveFromBasicSolution(vector<int> basis, VectorXd solution) {
         EIGEN_ERRDETECT(normal_solver, false, "failed to calculate start factorization of d vector");
 
         for(Eta& eta : etas) {
-            double val = d[eta.index];
-            d += eta.etavector * d[eta.index];
-            d[eta.index] -= val;
+            double val = d[eta.index] / eta.etavector[eta.index];
+            d -= eta.etavector * val;
+            d[eta.index] = val;
         }
 
         // ^ after that loop, d is correct
@@ -191,27 +191,18 @@ bool Solver::solveFromBasicSolution(vector<int> basis, VectorXd solution) {
         bcosts[basis_id] = this->m_reader.c[best_col]; // update costs value
 
         // get eta vector
-        VectorXd inverse_eta = d;
-
-        // compute the inverse eta, cause thats what we're going to use
-        double det = d[basis_id];
-        for(int i = 0; i < rows; i++) {
-            if(i == basis_id)
-                inverse_eta[i] = 1/det;
-            else
-                inverse_eta[i] = -d[i]/det;
-        }
-        
         etas.push_back({
             .index = basis_id,
-            .etavector = inverse_eta
+            .etavector = d
         });
 
         // update the y vector
         VectorXd rhs_val = bcosts;
         for(int i = etas.size()-1; i >= 0; i--) {
             Eta& eta = etas[i];
-            rhs_val[eta.index] = rhs_val.dot(eta.etavector);
+            double cost = rhs_val[eta.index];
+            double val = eta.etavector[eta.index];
+            rhs_val[eta.index] = (cost * (1 + val) - eta.etavector.dot(rhs_val)) / val;
         }
 
         y = transp_solver.solve(rhs_val);
