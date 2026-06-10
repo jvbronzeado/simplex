@@ -1,6 +1,7 @@
 #include "solver.h"
 #include "eigen3/Eigen/UmfPackSupport"
 
+#define ITERATIONS_PER_REFRESH 100
 #define EPSILON 1e-9
 #define SMEPSILON 1e-12
 
@@ -124,7 +125,8 @@ SolutionResult Solver::solveFromBasicSolution(vector<int> basis, VectorXd soluti
 
     SolutionResult result = {};
     result.type = ResultType::FEASIBLE;
-    
+
+    int iterations = 0;
     while(true) {
         // TODO: maybe recalculate the B and clear etas after some iterations to avoid precisions errors
 
@@ -266,6 +268,14 @@ SolutionResult Solver::solveFromBasicSolution(vector<int> basis, VectorXd soluti
 
         y = transp_solver.solve(rhs_val);
         EIGEN_ERRDETECT(transp_solver, invalid_solution, "failed to calculate dual vector's linear system");
+
+        iterations++;
+
+        if(iterations >= ITERATIONS_PER_REFRESH) {
+            iterations = 0;
+            etas.clear();
+            this->updateB0(B, basis);
+        }
     }
 
     result.variables = solution;
