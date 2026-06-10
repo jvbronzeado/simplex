@@ -25,6 +25,7 @@ SolutionResult Solver::solve() {
     const int rows = this->m_reader.A.rows();
     const int cols = this->m_reader.A.cols();
     const int nonbasic_count = cols - rows;
+    const double infinity = std::numeric_limits<double>::infinity();
 
     // use the created artificial variables from reader as starting basic solution
     vector<int> start_basis(rows);
@@ -35,7 +36,15 @@ SolutionResult Solver::solve() {
     // generate basic solution
     VectorXd solution = VectorXd::Zero(cols);
     for(int i = 0; i < nonbasic_count; i++) { // we only iterate to the cols - rows because the rest is in the basis
-        solution[i] = max(this->m_reader.lb[i], std::numeric_limits<double>::lowest());
+        double lb = this->m_reader.lb[i];
+        double ub = this->m_reader.ub[i];
+
+        if(lb == -infinity && ub == infinity)
+            solution[i] = 0.0;
+        else if(lb == -infinity && ub != infinity)
+            solution[i] = ub;
+        else
+            solution[i] = lb;
     }
 
     VectorXd rhs = this->m_reader.b - this->m_reader.A.block(0, 0, rows, nonbasic_count) * solution.head(nonbasic_count);
@@ -75,8 +84,7 @@ SolutionResult Solver::solve() {
             .type = ResultType::UNBOUNDED
         };
     }
-
-    cout << "Variables: " << result.variables << "\nObjective: " << result.objective << endl;
+    
     return this->solveFromBasicSolution(result.basis, result.variables, false);
 }
 
