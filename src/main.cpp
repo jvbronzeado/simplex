@@ -118,11 +118,34 @@ int main(const int argc, const char* argv[]) {
         std::cout << "solving " << input.string() << std::endl;
 
         mpsReader reader(input.string());
+        reader.c *= -1;
+
         Solver solver(reader);
 
-        SolutionResult result = solver.solve();
+        try {
+            SolutionResult result = solver.solve();
 
-        cout << "Variables: \n" << result.variables << "\nObjective: " << result.objective << endl;
+            cout << "Objective: " << std::scientific << -result.objective << endl;
+            //cout << std::defaultfloat << result.variables << endl;
+            if(result.type == ResultType::UNBOUNDED) {
+                cout << "unbounded" << endl;
+            }
+            else if(result.type == ResultType::INFEASIBLE) {
+                cout << "infeasible" << endl;
+            }
+        }
+        catch (const std::runtime_error& e) {
+            // Specifically catch runtime errors
+            std::cerr << "Caught a runtime error: " << e.what() << '\n';
+        } 
+        catch (const std::exception& e) {
+            // Catch any other standard exceptions (overflow, out of range, etc.)
+            std::cerr << "Caught a standard exception: " << e.what() << '\n';
+        } 
+        catch (...) {
+            // Catch-all block for any unhandled type (like raw ints or strings)
+            std::cerr << "Caught an unknown exception.\n";
+        }
     }
     
     return 0;

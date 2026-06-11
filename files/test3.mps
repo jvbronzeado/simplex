@@ -1,13 +1,66 @@
-NAME          NUMERICAL_STORM
+NAME          AGRO_INDUSTRIAL
 ROWS
- N  COST
- L  R1
- L  R2
+ N  LUCRO
+ L  TERRA
+ L  AGUA
+ L  FERTILIZANTE
+ L  MAO_OBRA
+ L  PROCESSAMENTO
+ L  ARMAZEM
+ E  DEGEN_RHS0
+ E  MISTURA_A
+ E  MISTURA_B
+ G  CONTRATO_MIN
+ L  LIMIT_EXP
+ L  REDUND_1
+ L  REDUND_2
+ L  QUALIDADE
 COLUMNS
-    X1        COST            10.0   R1               0.0000000001
-    X1        R2               1.0
-    X2        COST            15.0   R1               1.0
-    X2        R2               1000000000.0
+    B01       LUCRO     -800.0    TERRA     2.0       AGUA      1.5
+    B01       DEGEN_RHS0 1.0       MAO_OBRA  1.0
+    B02       LUCRO     -800.0    TERRA     2.0       AGUA      1.5
+    B02       DEGEN_RHS0 1.0       MAO_OBRA  1.1
+    B03       LUCRO     -1200.0   FERTILIZANTE 3.0    PROCESSAMENTO 2.5
+    B03       MISTURA_A  1.0
+    B04       LUCRO     -1200.0   FERTILIZANTE 3.0    PROCESSAMENTO 2.5
+    B04       MISTURA_A  1.0
+    B05       LUCRO     -2500.0   TERRA     5.0       ARMAZEM   4.0
+    B05       REDUND_1   1.0
+    B06       LUCRO     -2500.0   TERRA     5.0       ARMAZEM   4.0
+    B06       REDUND_2   1.0
+    B07       LUCRO     -600.0    AGUA      2.0       CONTRATO_MIN 1.0
+    B08       LUCRO     -1500.0   MAO_OBRA  3.0       LIMIT_EXP 1.0
+    B09       LUCRO     -900.0    PROCESSAMENTO 2.0   QUALIDADE 1.0
+    B10       LUCRO     -1100.0   TERRA     2.5       AGUA      2.0
+    B11       LUCRO     -2000.0   FERTILIZANTE 4.0    ARMAZEM   3.5
+    B12       LUCRO     -750.0    MAO_OBRA  1.5       CONTRATO_MIN 1.0
+    B13       LUCRO     -1300.0   PROCESSAMENTO 3.0   LIMIT_EXP 1.0
+    B14       LUCRO     -950.0    TERRA     2.2       QUALIDADE 1.2
+    B15       LUCRO     -1800.0   AGUA      4.0       ARMAZEM   3.0
+    B16       LUCRO     -2200.0   FERTILIZANTE 5.0    MAO_OBRA  3.5
+    B17       LUCRO     -500.0    PROCESSAMENTO 1.0   REDUND_1  0.5
+    B18       LUCRO     -1400.0   TERRA     3.5       MISTURA_B 1.0
+    B19       LUCRO     -1600.0   AGUA      3.2       MISTURA_B 1.0
+    B20       LUCRO     -1000.0   FERTILIZANTE 2.5    LIMIT_EXP 1.0
+    B21       LUCRO     -3000.0   TERRA     6.0       ARMAZEM   5.0
+    B22       LUCRO     -450.0    AGUA      1.0       MAO_OBRA  0.8
+    B23       LUCRO     -1250.0   PROCESSAMENTO 2.8   QUALIDADE 1.5
+    B24       LUCRO     -1700.0   FERTILIZANTE 3.8    REDUND_2  1.0
+    B25       LUCRO     -2100.0   TERRA     4.5       MAO_OBRA  3.0
+    B26       LUCRO     -850.0    AGUA      2.2       CONTRATO_MIN 1.0
+    B27       LUCRO     -1350.0   PROCESSAMENTO 2.9   LIMIT_EXP 1.0
+    B28       LUCRO     -2400.0   FERTILIZANTE 4.5    ARMAZEM   4.2
+    B29       LUCRO     -1900.0   TERRA     4.0       QUALIDADE 2.0
+    B30       LUCRO     -1050.0   AGUA      2.5       MAO_OBRA  2.0
 RHS
-    RHS1      R1              1.0    R2              1.0
+    RHS1      TERRA     10000.0   AGUA      8000.0
+    RHS1      FERTILIZANTE 6000.0   MAO_OBRA  5000.0
+    RHS1      PROCESSAMENTO 4500.0  ARMAZEM   3500.0
+    RHS1      DEGEN_RHS0 0.0        MISTURA_A  500.0
+    RHS1      MISTURA_B  400.0      CONTRATO_MIN 1000.0
+    RHS1      LIMIT_EXP  2000.0     REDUND_1   5000.0
+    RHS1      REDUND_2   5000.0     QUALIDADE  2500.0
+BOUNDS
+ UP BND1      B05       100.0
+ UP BND1      B21       50.0
 ENDATA
