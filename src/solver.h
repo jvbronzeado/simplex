@@ -45,10 +45,16 @@ private:
         VectorXd etavector;
     };
 
+    struct EnteringCollumnData {
+        double best_ya;
+        int entering_col;
+        int entering_col_id;
+    };
+
     struct LeavingCollumnData {
         double t;
-        //double bound_clamp;
         int leaving_col;
+        int leaving_col_id;
     };
 
     SolutionResult solveFromBasicSolution(vector<int> start_basis, VectorXd basic_solution, bool phase1);
@@ -56,7 +62,7 @@ private:
     void initializeSolvers();
     void updateBcosts();
         
-    pair<int, double> findEntering() const;
+    EnteringCollumnData findEntering() const;
     LeavingCollumnData findLeaving(int entering_col, double best_ya) const;
     void ftran(int entering_col);
     void btran();

@@ -1,12 +1,32 @@
 #include "solver.h"
+#include <chrono>
 
 #define MAX_ITERATIONS_PER_RECALC 20
-#define EPSILON 1e-6
-#define SMEPSILON 1e-9
+
+#define HGEPSILON 1e-6
+#define EPSILON 1e-8
+#define SMEPSILON 1e-7
 
 #define EIGEN_ERRDETECT(solver, err_msg) if((solver).info() != Eigen::Success) { \
     throw SolverException(ResultType::INFEASIBLE, (err_msg)); \
 }
+
+class Benchmarker {
+public:
+    Benchmarker(const std::string& name) {
+        this->start = std::chrono::high_resolution_clock::now();
+        this->name = name;
+    }
+
+    ~Benchmarker() {
+        auto end = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+        //cout << "BENCHMARK [" << name << "]: " << elapsed.count() << "ns" << endl;
+    }
+private:
+    std::string name;
+    std::chrono::time_point<std::chrono::high_resolution_clock> start;
+};
 
 Solver::Solver(mpsReader reader) {
     this->m_reader = reader;
@@ -41,6 +61,7 @@ SolutionResult Solver::solve() {
     // calculate the basis solution
     VectorXd rhs = this->m_reader.b - this->m_reader.A.block(0, 0, rows, nonbasic_count) * solution.head(nonbasic_count);
 
+    this->m_Asv = this->m_reader.A.sparseView();
     this->m_B = Eigen::SparseMatrix<double>(rows, rows);
     this->m_basis = start_basis;
     this->updateB0();
@@ -116,6 +137,8 @@ SolutionResult Solver::solveFromBasicSolution(vector<int> start_basis, VectorXd 
 
     int iterations = 0;
     while(true) {
+        Benchmarker benchmark("ITERATION");
+        
         if(phase1) {
             int count = this->updatePhaseCosts();
             if(count == 0) {
@@ -128,7 +151,7 @@ SolutionResult Solver::solveFromBasicSolution(vector<int> start_basis, VectorXd 
             this->btran();
         }
 
-        auto [entering_col, best_ya] = this->findEntering();
+        auto [best_ya, entering_col, entering_col_id] = this->findEntering();
         if(entering_col == -1) {
             // no way to improve
             cout << "no improve" << endl;
@@ -138,6 +161,8 @@ SolutionResult Solver::solveFromBasicSolution(vector<int> start_basis, VectorXd 
         this->ftran(entering_col);
 
         LeavingCollumnData leavingData = this->findLeaving(entering_col, best_ya);
+
+        //cout << "entering: " << entering_col << " leaving: " << leavingData.leaving_col << " curr cost: " << this->m_activeCosts.dot(this->m_solution) << endl;
         if(leavingData.leaving_col == -1) {
             if(isinf(leavingData.t)) {
                 cout << "unbounded" << endl;
@@ -146,14 +171,13 @@ SolutionResult Solver::solveFromBasicSolution(vector<int> start_basis, VectorXd 
             }
 
             // border swap
-            cout << "border swap" << endl;
             this->updateSolution(entering_col, leavingData.t);
             this->btran();
             continue;
         }
 
         this->updateSolution(entering_col, leavingData.t);
-        this->swapCollumns(entering_col, leavingData.leaving_col);
+        this->swapCollumns(entering_col_id, leavingData.leaving_col_id);
         
         iterations++;
         if(iterations >= MAX_ITERATIONS_PER_RECALC) {
@@ -182,6 +206,7 @@ SolutionResult Solver::solveFromBasicSolution(vector<int> start_basis, VectorXd 
 }
 
 void Solver::updateBcosts() {
+    Benchmarker benchmark("BCOSTS UPDATE");
     const int rows = this->m_reader.A.rows();
     this->m_bcosts = VectorXd(rows);
     for(int i = 0; i < rows; i++) {
@@ -189,28 +214,36 @@ void Solver::updateBcosts() {
     }
 }
 
-pair<int, double> Solver::findEntering() const {
+Solver::EnteringCollumnData Solver::findEntering() const {
+    Benchmarker benchmark("FIND ENTERING");
     int entering_col = -1;
+    int entering_col_id = -1;
     double best_ya = -1;
+
+    int i = 0;
     for(int colid : this->m_nonbasis) {
         double cost = this->m_activeCosts[colid];
         double ub = this->m_activeUB[colid];
         double lb = this->m_activeLB[colid];
 
-        double ya = this->m_reader.A.col(colid).dot(this->m_y);
+        double ya = this->m_Asv.col(colid).dot(this->m_y);
 
-        if((ya < cost - EPSILON && this->m_solution[colid] < ub - EPSILON) || (ya > cost + EPSILON && this->m_solution[colid] > lb + EPSILON)) {
+        if((ya < cost - HGEPSILON && this->m_solution[colid] < ub - HGEPSILON) || (ya > cost + HGEPSILON && this->m_solution[colid] > lb + HGEPSILON)) {
             if(entering_col == -1 || colid < entering_col) { // always select lower index to avoid cycling
                 entering_col = colid;
+                entering_col_id = i;
                 best_ya = ya;
+                break;
             }
         }
+        i++;
     }
 
-    return {entering_col, best_ya};
+    return {best_ya, entering_col, entering_col_id};
 }
 
 Solver::LeavingCollumnData Solver::findLeaving(int entering_col, double best_ya) const {
+    Benchmarker benchmark("FIND LEAVING");
     const int rows = this->m_reader.A.rows();
 
     double cost_reduction = this->m_activeCosts[entering_col] - best_ya;
@@ -221,23 +254,24 @@ Solver::LeavingCollumnData Solver::findLeaving(int entering_col, double best_ya)
 
     double t = multiplier > 0 ? (entering_ub - this->m_solution[entering_col]) : (this->m_solution[entering_col] - entering_lb);
     int leaving = -1;
+    int leaving_id = -1;
 
     for(int i = 0; i < rows; i++) {
         int colid = this->m_basis[i];
 
-        if(abs(this->m_d[i]) <= EPSILON)
+        if(abs(this->m_d[i]) <= SMEPSILON)
             continue;
 
         double slope = -this->m_d[i] * multiplier;
         double maxt = -1;
-        if(slope < -EPSILON) {
+        if(slope < -SMEPSILON) {
             maxt = -(this->m_solution[colid] - this->m_activeLB[colid]) / (slope);
         }
-        else if(slope > EPSILON) {
+        else if(slope > SMEPSILON) {
             maxt = (this->m_activeUB[colid] - this->m_solution[colid]) / (slope);
         }
 
-        if(maxt < -EPSILON || isinf(maxt))
+        if(maxt < -HGEPSILON || isinf(maxt))
             continue;
 
         if(maxt < SMEPSILON) {
@@ -247,20 +281,25 @@ Solver::LeavingCollumnData Solver::findLeaving(int entering_col, double best_ya)
         if(maxt < t - EPSILON) {
             t = maxt;
             leaving = colid;
+            leaving_id = i;
         }
         else if(abs(t - maxt) < EPSILON) {
-            if(leaving == -1 || colid < leaving)
+            if(colid < leaving) {
                 leaving = colid;
+                leaving_id = i;
+            }
         }
     }
 
     return {    
         .t = t * multiplier,
-        .leaving_col = leaving
+        .leaving_col = leaving,
+        .leaving_col_id = leaving_id
     };
 }
 
 void Solver::ftran(int entering_col) {
+    Benchmarker benchmark("FTRAN");
     this->m_d = this->m_nsolver.solve(this->m_Asv.col(entering_col)); // set starting rhs value
     EIGEN_ERRDETECT(this->m_nsolver, "failed to calculate start factorization of d vector");
 
@@ -273,6 +312,7 @@ void Solver::ftran(int entering_col) {
 }
 
 void Solver::btran() {
+    Benchmarker benchmark("BTRAN");
     VectorXd rhs_val = this->m_bcosts;
     for(int i = this->m_etas.size()-1; i >= 0; i--) {
         SolverETA& eta = this->m_etas[i];
@@ -282,37 +322,45 @@ void Solver::btran() {
         rhs_val[eta.index] = (cost * (1 + val) - eta.etavector.dot(rhs_val)) / val;
     }
 
+    Benchmarker benchmark2("BTRAN_LINEARSOLVE");
     this->m_y = this->m_tsolver.solve(rhs_val);
     EIGEN_ERRDETECT(this->m_tsolver, "failed to calculate dual vector's linear system");
 }
 
 void Solver::updateSolution(int entering_col, double t) {
+    Benchmarker benchmark("SOL UPDT");
     this->m_solution[entering_col] += t;
 
     for(int i = 0; i < this->m_reader.A.rows(); i++) {
-        if(abs(this->m_d[i]) <= EPSILON || abs(t) <= EPSILON)
-            continue;
         this->m_solution[this->m_basis[i]] -= t * this->m_d[i];
     }
 }
 
-void Solver::swapCollumns(int entering_col, int leaving_col) {   
-    int basis_id = std::find(this->m_basis.begin(), this->m_basis.end(), leaving_col) - this->m_basis.begin();
-    int nonbasic_id = std::find(this->m_nonbasis.begin(), this->m_nonbasis.end(), entering_col) - this->m_nonbasis.begin();
-
-    this->m_basis[basis_id] = entering_col;
-    this->m_nonbasis[nonbasic_id] = leaving_col;
+void Solver::swapCollumns(int entering_col_id, int leaving_col_id) {
+    Benchmarker benchmark("SWAP COLS");
+    int entering_col = this->m_nonbasis[entering_col_id];
+    int leaving_col = this->m_basis[leaving_col_id];
     
-    this->m_bcosts[basis_id] = this->m_activeCosts[entering_col]; // update costs value
+    this->m_basis[leaving_col_id] = entering_col;
+
+    // erase and insert in the correct order    
+    this->m_nonbasis.erase(this->m_nonbasis.begin() + entering_col_id);
+
+    auto insert_pos = lower_bound(this->m_nonbasis.begin(), this->m_nonbasis.end(), leaving_col);
+    this->m_nonbasis.insert(insert_pos, leaving_col);
+    //this->m_nonbasis[entering_col_id] = leaving_col;
+
+    this->m_bcosts[leaving_col_id] = this->m_activeCosts[entering_col]; // update costs value
 
     // add eta vector
     this->m_etas.push_back({
-        .index = basis_id,
+        .index = leaving_col_id,
         .etavector = this->m_d
     });
 }
 
 vector<int> Solver::calculateNonBasicFromBasic(const vector<int>& basis) const {
+    Benchmarker benchmark("NONBASIC FROM BASIC");
     const int cols = this->m_reader.A.cols();
     const int rows = this->m_reader.A.rows();
     vector<bool> mask(cols, false);
@@ -330,26 +378,29 @@ vector<int> Solver::calculateNonBasicFromBasic(const vector<int>& basis) const {
 }
 
 void Solver::updateB0() {
-    Eigen::SparseMatrix<double> A = this->m_reader.A.sparseView();
+    Benchmarker benchmark("UPDATE B0");
     const int rows = this->m_reader.A.rows();
+
+    this->m_B = Eigen::SparseMatrix<double>(rows, rows);
     
-    // Lista segura de posições e valores para matrizes esparsas
-    std::vector<Eigen::Triplet<double>> triplets;
+    Eigen::VectorXi nnz_per_col(rows);
+    for(int i = 0; i < rows; i++) {
+        nnz_per_col[i] = this->m_Asv.col(this->m_basis[i]).nonZeros();
+    }
+    
+    this->m_B.reserve(nnz_per_col);
     
     for(int i = 0; i < rows; i++) {
-        // Itera sobre os não-zeros da coluna original em A e mapeia para a nova coluna i em B
-        for(Eigen::SparseMatrix<double>::InnerIterator it(A, this->m_basis[i]); it; ++it) {
-            triplets.push_back(Eigen::Triplet<double>(it.row(), i, it.value()));
+        for(Eigen::SparseMatrix<double>::InnerIterator it(this->m_Asv, this->m_basis[i]); it; ++it) {
+            this->m_B.insert(it.row(), i) = it.value();
         }
     }
-
-    // Instancia a matriz vazia e preenche de uma vez só com a lista
-    this->m_B = Eigen::SparseMatrix<double>(rows, rows);
-    this->m_B.setFromTriplets(triplets.begin(), triplets.end());
+    
     this->m_B.makeCompressed();
 }
 
 int Solver::updatePhaseCosts() {
+    Benchmarker benchmark("PHASE COSTS");
     int count = 0;
 
     for(int i = 0; i < this->m_reader.A.cols(); i++) {
@@ -358,20 +409,20 @@ int Solver::updatePhaseCosts() {
         this->m_activeUB[i] = ub;
         this->m_activeLB[i] = lb;
 
-        if(abs(this->m_solution[i] - this->m_reader.ub[i]) <= EPSILON) {
+        if(abs(this->m_solution[i] - this->m_reader.ub[i]) <= HGEPSILON) {
             this->m_solution[i] = this->m_reader.ub[i];
         }
-        else if(abs(this->m_solution[i] - this->m_reader.lb[i]) <= EPSILON) {
+        else if(abs(this->m_solution[i] - this->m_reader.lb[i]) <= HGEPSILON) {
             this->m_solution[i] = this->m_reader.lb[i];
         }
 
-        if(this->m_solution[i] > this->m_reader.ub[i] + EPSILON) {
+        if(this->m_solution[i] > this->m_reader.ub[i] + HGEPSILON) {
             this->m_activeCosts[i] = -1;
             this->m_activeUB[i] = std::numeric_limits<double>::infinity();
             this->m_activeLB[i] = ub;
             count++;
         }
-        else if(this->m_solution[i] < this->m_reader.lb[i] - EPSILON) {
+        else if(this->m_solution[i] < this->m_reader.lb[i] - HGEPSILON) {
             this->m_activeCosts[i] = 1;
             this->m_activeUB[i] = lb;
             this->m_activeLB[i] = -std::numeric_limits<double>::infinity();
@@ -381,5 +432,7 @@ int Solver::updatePhaseCosts() {
             this->m_activeCosts[i] = 0;
         }
     }
+
+    //cout << count << endl;
     return count;
 }
